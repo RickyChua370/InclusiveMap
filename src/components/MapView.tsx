@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MAP_STYLE, type City } from "../config";
@@ -39,6 +39,7 @@ export default function MapView({
   // geolocation fix doesn't yank the map away from their choice.
   const userPickedCityRef = useRef(false);
   const firstCityRender = useRef(true);
+  const [styleReady, setStyleReady] = useState(false);
 
   // init
   useEffect(() => {
@@ -68,9 +69,29 @@ export default function MapView({
       clickRef.current([e.lngLat.lng, e.lngLat.lat]),
     );
 
-    // Once the map is ready, try to centre on the user automatically.
-    // If they deny permission (or it fails) we silently stay on the city.
+    // Add the route source + layer ONCE, as soon as the style loads. After
+    // this, drawing a route is just a data update — no timing races.
     map.on("load", () => {
+      if (!map.getSource("route")) {
+        map.addSource("route", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+        });
+        map.addLayer({
+          id: "route-line",
+          type: "line",
+          source: "route",
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-color": "#2563eb",
+            "line-width": 7,
+            "line-opacity": 0.9,
+          },
+        });
+      }
+      setStyleReady(true);
+
+      // Try to centre on the user automatically (unless they picked a city).
       if (!userPickedCityRef.current) {
         try {
           geolocate.trigger();
@@ -98,66 +119,35 @@ export default function MapView({
     mapRef.current?.flyTo({ center: city.center, zoom: city.zoom });
   }, [city]);
 
-  // draw route — resilient to style-load races and re-planning.
+  // draw route — source/layer already exist, so this is just a data update.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !styleReady) return;
+    const src = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
+    if (!src) return;
 
-    const geojson = {
-      type: "FeatureCollection" as const,
+    src.setData({
+      type: "FeatureCollection",
       features: route
         ? [
             {
-              type: "Feature" as const,
+              type: "Feature",
               geometry: {
-                type: "LineString" as const,
+                type: "LineString",
                 coordinates: route.coordinates,
               },
               properties: {},
             },
           ]
         : [],
-    };
+    });
 
-    const draw = () => {
-      // (Re)create the source if the style reloaded and dropped it.
-      let src = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
-      if (!src) {
-        map.addSource("route", { type: "geojson", data: geojson });
-        src = map.getSource("route") as maplibregl.GeoJSONSource;
-      } else {
-        src.setData(geojson);
-      }
-
-      // Make sure the line layer exists (it can be lost on style changes).
-      if (!map.getLayer("route-line")) {
-        map.addLayer({
-          id: "route-line",
-          type: "line",
-          source: "route",
-          layout: { "line-join": "round", "line-cap": "round" },
-          paint: {
-            "line-color": "#2563eb",
-            "line-width": 6,
-            "line-opacity": 0.9,
-          },
-        });
-      }
-
-      if (route && route.coordinates.length > 1) {
-        const b = new maplibregl.LngLatBounds();
-        route.coordinates.forEach((c) => b.extend(c));
-        map.fitBounds(b, { padding: 70, maxZoom: 16 });
-      }
-    };
-
-    if (map.isStyleLoaded()) {
-      draw();
-    } else {
-      // "load" may have already fired; "idle" always fires once ready.
-      map.once("idle", draw);
+    if (route && route.coordinates.length > 1) {
+      const b = new maplibregl.LngLatBounds();
+      route.coordinates.forEach((c) => b.extend(c));
+      map.fitBounds(b, { padding: 70, maxZoom: 16, duration: 600 });
     }
-  }, [route]);
+  }, [route, styleReady]);
 
   // markers for start / end / venues
   useEffect(() => {

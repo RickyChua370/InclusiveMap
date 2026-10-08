@@ -179,7 +179,20 @@ export default function App() {
               city={city}
               userLocation={userLocation}
               onRoute={routeBetween}
+              onSetStart={(s) => {
+                setStart(s);
+                setEnd(null);
+                setRoute(null);
+              }}
             />
+
+            <p className="howto">
+              {!start
+                ? "① Set a start (search, 📍, or click the map)."
+                : !end
+                  ? "② Now click the map (or search) to set your destination."
+                  : "✓ Route set. Click the map to start a new one."}
+            </p>
 
             {loading && <p className="muted">Planning your comfort route…</p>}
             {error && <p className="error">Error: {error}</p>}

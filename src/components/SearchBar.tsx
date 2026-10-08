@@ -7,13 +7,20 @@ interface Props {
   city: City;
   userLocation: LngLat | null;
   onRoute: (start: LngLat, end: LngLat) => void;
+  /** Set only the start (e.g. "use my location"); user then picks the end. */
+  onSetStart: (start: LngLat) => void;
 }
 
 /**
  * From/To text search using free Nominatim geocoding. An alternative to
  * clicking the map — type place names and hit "Find comfort route".
  */
-export default function SearchBar({ city, userLocation, onRoute }: Props) {
+export default function SearchBar({
+  city,
+  userLocation,
+  onRoute,
+  onSetStart,
+}: Props) {
   const [fromText, setFromText] = useState("");
   const [toText, setToText] = useState("");
   const [fromResults, setFromResults] = useState<GeoResult[]>([]);
@@ -49,6 +56,8 @@ export default function SearchBar({ city, userLocation, onRoute }: Props) {
     setFromSel(userLocation);
     setFromText("📍 My location");
     setFromResults([]);
+    // Push to App as the start so the next MAP CLICK sets the destination.
+    onSetStart(userLocation);
   }
 
   function go() {
