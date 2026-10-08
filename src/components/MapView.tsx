@@ -82,6 +82,8 @@ export default function MapView({
   const routeRef = useRef<RouteResult | null>(null);
   routeRef.current = route;
   const [styleReady, setStyleReady] = useState(false);
+  const styleReadyRef = useRef(false);
+  styleReadyRef.current = styleReady;
 
   // init
   useEffect(() => {
@@ -113,17 +115,16 @@ export default function MapView({
       clickRef.current([e.lngLat.lng, e.lngLat.lat]),
     );
 
-    const onReady = () => {
-      redrawRoute(map, routeRef.current); // paint any route we already have
+    // Draw the route whenever the map settles. "idle" fires reliably after any
+    // interaction/tile load, independent of isStyleLoaded() — which can stay
+    // false with raster-only styles and was blocking the line from painting.
+    map.on("idle", () => {
+      if (!styleReadyRef.current) setStyleReady(true);
+    });
+    map.once("load", () => {
+      redrawRoute(map, routeRef.current);
       setStyleReady(true);
-      // NOTE: we intentionally do NOT auto-trigger geolocation here. The map
-      // stays on the selected pilot city; the user taps the locate control
-      // or "Use my location as start" when they want their position.
-    };
-
-    // Cover every case: style may already be loaded, or load later.
-    if (map.isStyleLoaded()) onReady();
-    else map.on("load", onReady);
+    });
 
     // Expose for diagnostics (harmless; helps verify the route line in-browser).
     (window as unknown as { __map?: maplibregl.Map }).__map = map;
@@ -146,16 +147,22 @@ export default function MapView({
     mapRef.current?.flyTo({ center: city.center, zoom: city.zoom });
   }, [city]);
 
-  // draw route whenever it changes (and once the style becomes ready).
+  // draw route whenever it changes (and once the map first becomes ready).
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !styleReady) return;
-    redrawRoute(map, route);
-    if (route && route.coordinates.length > 1) {
-      const b = new maplibregl.LngLatBounds();
-      route.coordinates.forEach((c) => b.extend(c));
-      map.fitBounds(b, { padding: 70, maxZoom: 16, duration: 600 });
-    }
+    if (!map) return;
+    const paint = () => {
+      redrawRoute(map, route);
+      if (route && route.coordinates.length > 1) {
+        const b = new maplibregl.LngLatBounds();
+        route.coordinates.forEach((c) => b.extend(c));
+        map.fitBounds(b, { padding: 70, maxZoom: 16, duration: 600 });
+      }
+    };
+    paint();
+    // Re-assert after the next idle too, covering the case where the source
+    // wasn't registered yet on the first attempt.
+    map.once("idle", paint);
   }, [route, styleReady]);
 
   // markers for start / end / venues

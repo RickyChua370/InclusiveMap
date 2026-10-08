@@ -55,6 +55,9 @@ export const OVERPASS = "https://overpass-api.de/api/interpreter";
  */
 export const MAP_STYLE: import("maplibre-gl").StyleSpecification = {
   version: 8,
+  // An empty glyphs endpoint keeps MapLibre's style initialisation complete
+  // (otherwise isStyleLoaded() can stay false and vector layers never paint).
+  glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
   sources: {
     basemap: {
       type: "raster",
