@@ -40,6 +40,38 @@ export function sunElevation(route: LngLat[], when: Date): number {
   return (pos.altitude * 180) / Math.PI;
 }
 
+/**
+ * Per-segment shade/comfort (0 = exposed/hot, 1 = shaded/cool), one value for
+ * each gap between consecutive route points. Used to COLOR the route line so
+ * comfort is visible at a glance. Driven by sun elevation + a stable per-segment
+ * cover value (deterministic from the segment's coordinates, so the same route
+ * always colours the same way).
+ */
+export function segmentShade(route: LngLat[], when: Date): number[] {
+  const out: number[] = [];
+  if (route.length < 2) return out;
+
+  const mid = route[Math.floor(route.length / 2)];
+  const pos = SunCalc.getPosition(when, mid[1], mid[0]);
+  const elevationDeg = (pos.altitude * 180) / Math.PI;
+
+  // Night: everything is "shaded" (no sun exposure).
+  if (elevationDeg <= 0) return route.slice(1).map(() => 1);
+
+  const angleShade = Math.max(0.1, Math.cos((elevationDeg * Math.PI) / 180));
+
+  for (let i = 1; i < route.length; i++) {
+    const a = route[i - 1];
+    const b = route[i];
+    // Deterministic pseudo-cover from the segment midpoint coordinates.
+    const seed = Math.sin((a[0] + b[0]) * 73.1 + (a[1] + b[1]) * 19.7);
+    const cover = (seed + 1) / 2; // 0..1
+    // Blend sun angle with local cover; keep within a readable range.
+    out.push(clamp01(angleShade * 0.55 + cover * 0.45));
+  }
+  return out;
+}
+
 function routeCoverProxy(route: LngLat[]): number {
   if (route.length < 3) return 0.3;
   let turns = 0;

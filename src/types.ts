@@ -33,6 +33,11 @@ export interface RouteResult {
   shadeFraction: number;
   /** Accessibility amenity counts found near the route. */
   amenities: AmenityCounts;
+  /** Individual amenities (with coords) close to the route, for map pins. */
+  amenityPoints: AmenityPoint[];
+  /** Per-segment comfort for coloring the route line (one value per gap between
+   *  consecutive coordinates; 0 = exposed/hot, 1 = shaded/comfortable). */
+  segmentComfort: number[];
   /** Whether this came from the real routing API or the offline fallback. */
   isFallback: boolean;
 }
@@ -42,6 +47,14 @@ export interface AmenityCounts {
   water: number;
   toilets: number;
   steps: number; // obstacles — steps/stairs near the path (lower is better)
+}
+
+export type AmenityKind = "bench" | "water" | "toilets" | "steps";
+
+/** A single mapped amenity along the route. */
+export interface AmenityPoint {
+  kind: AmenityKind;
+  lngLat: LngLat;
 }
 
 /** A comfort score for one hour, used by the "When to Go" strip. */

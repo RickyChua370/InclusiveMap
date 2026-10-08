@@ -1,5 +1,5 @@
 import { OVERPASS } from "../config";
-import type { AmenityCounts, LngLat } from "../types";
+import type { AmenityCounts, AmenityKind, AmenityPoint, LngLat } from "../types";
 
 /** Bounding box helper: [south, west, north, east] around a set of points. */
 function bbox(points: LngLat[], padding = 0.0015) {
@@ -21,14 +21,36 @@ function bbox(points: LngLat[], padding = 0.0015) {
   };
 }
 
+/** Rough metres between two lng/lat points (equirectangular approx). */
+function distM(a: LngLat, b: LngLat): number {
+  const R = 6371000;
+  const x = ((b[0] - a[0]) * Math.PI) / 180 * Math.cos((a[1] * Math.PI) / 180);
+  const y = ((b[1] - a[1]) * Math.PI) / 180;
+  return R * Math.sqrt(x * x + y * y);
+}
+
+/** Shortest distance (m) from a point to any vertex of the route polyline. */
+function distToRoute(p: LngLat, route: LngLat[]): number {
+  let min = Infinity;
+  for (const v of route) {
+    const d = distM(p, v);
+    if (d < min) min = d;
+  }
+  return min;
+}
+
+export interface AmenitiesResult {
+  counts: AmenityCounts;
+  points: AmenityPoint[];
+}
+
 /**
  * Query OpenStreetMap (via the free Overpass API) for accessibility amenities
  * near a route: benches, drinking water, toilets, and step/stair obstacles.
- * These tags are rich in OSM but almost no router surfaces them.
+ * Returns both counts AND coordinates, filtered to those within ~60 m of the
+ * actual path (not just the bounding box) so map pins are genuinely "on route".
  */
-export async function fetchAmenities(
-  route: LngLat[],
-): Promise<AmenityCounts> {
+export async function fetchAmenities(route: LngLat[]): Promise<AmenitiesResult> {
   const b = bbox(route);
   const area = `(${b.south},${b.west},${b.north},${b.east})`;
   const query = `
@@ -51,23 +73,44 @@ export async function fetchAmenities(
   const data = await res.json();
 
   const counts: AmenityCounts = { benches: 0, water: 0, toilets: 0, steps: 0 };
+  const points: AmenityPoint[] = [];
+  const NEAR_M = 60; // only keep amenities within 60 m of the path
+
   for (const el of data.elements ?? []) {
     const t = el.tags ?? {};
-    if (t.amenity === "bench") counts.benches++;
-    else if (t.amenity === "drinking_water") counts.water++;
-    else if (t.amenity === "toilets") counts.toilets++;
-    else if (t.highway === "steps") counts.steps++;
+    const lat = el.lat ?? el.center?.lat;
+    const lon = el.lon ?? el.center?.lon;
+    if (lat == null || lon == null) continue;
+    const p: LngLat = [lon, lat];
+    if (distToRoute(p, route) > NEAR_M) continue;
+
+    let kind: AmenityKind | null = null;
+    if (t.amenity === "bench") kind = "bench";
+    else if (t.amenity === "drinking_water") kind = "water";
+    else if (t.amenity === "toilets") kind = "toilets";
+    else if (t.highway === "steps") kind = "steps";
+    if (!kind) continue;
+
+    points.push({ kind, lngLat: p });
+    if (kind === "bench") counts.benches++;
+    else if (kind === "water") counts.water++;
+    else if (kind === "toilets") counts.toilets++;
+    else if (kind === "steps") counts.steps++;
   }
-  return counts;
+
+  return { counts, points };
 }
 
-/** Offline fallback amenity estimate so the demo always renders. */
-export function syntheticAmenities(route: LngLat[]): AmenityCounts {
+/** Offline fallback amenity estimate (counts only, no map pins). */
+export function syntheticAmenities(route: LngLat[]): AmenitiesResult {
   const km = route.length / 50;
   return {
-    benches: Math.round(2 + km * 3),
-    water: Math.round(km * 1.5),
-    toilets: Math.max(1, Math.round(km)),
-    steps: Math.round(km),
+    counts: {
+      benches: Math.round(2 + km * 3),
+      water: Math.round(km * 1.5),
+      toilets: Math.max(1, Math.round(km)),
+      steps: Math.round(km),
+    },
+    points: [],
   };
 }

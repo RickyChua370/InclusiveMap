@@ -1,7 +1,7 @@
 import { ORS_BASE, ORS_KEY, PROFILES, type ProfileId } from "../config";
 import type { LngLat, RouteResult } from "../types";
 import { fetchAmenities, syntheticAmenities } from "./overpass";
-import { estimateShadeFraction } from "../engine/shade";
+import { estimateShadeFraction, segmentShade } from "../engine/shade";
 
 /**
  * Request a walking/wheelchair route from OpenRouteService (free tier).
@@ -56,16 +56,26 @@ export async function getRoute(
   // Enrich with the data nobody else surfaces: shade + accessibility amenities.
   // Overpass can be slow/flaky, so cap it with a timeout and fall back cleanly —
   // the route must never hang waiting on amenities.
-  let amenities;
+  let amenitiesResult;
   try {
-    amenities = await withTimeout(fetchAmenities(coordinates), 6000);
+    amenitiesResult = await withTimeout(fetchAmenities(coordinates), 6000);
   } catch {
-    amenities = syntheticAmenities(coordinates);
+    amenitiesResult = syntheticAmenities(coordinates);
   }
 
   const shadeFraction = estimateShadeFraction(coordinates, when);
+  const segmentComfort = segmentShade(coordinates, when);
 
-  return { coordinates, distanceM, durationS, shadeFraction, amenities, isFallback };
+  return {
+    coordinates,
+    distanceM,
+    durationS,
+    shadeFraction,
+    amenities: amenitiesResult.counts,
+    amenityPoints: amenitiesResult.points,
+    segmentComfort,
+    isFallback,
+  };
 }
 
 // --- geometry helpers --------------------------------------------------------

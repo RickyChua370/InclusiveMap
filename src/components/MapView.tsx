@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { City } from "../config";
-import type { LngLat, RouteResult, Venue } from "../types";
+import type { AmenityKind, LngLat, RouteResult, Venue } from "../types";
 
 interface Props {
   city: City;
@@ -25,6 +25,36 @@ function dot(color: string, title: string): L.DivIcon {
   });
 }
 
+/** Emoji badge icon for amenities along the route. */
+const AMENITY_META: Record<
+  AmenityKind,
+  { emoji: string; label: string; bg: string }
+> = {
+  bench: { emoji: "🪑", label: "Bench / rest seat", bg: "#ecfdf5" },
+  water: { emoji: "🚰", label: "Drinking water", bg: "#eff6ff" },
+  toilets: { emoji: "🚻", label: "Toilets", bg: "#f5f3ff" },
+  steps: { emoji: "⚠️", label: "Steps / stairs (obstacle)", bg: "#fef2f2" },
+};
+
+function amenityIcon(kind: AmenityKind): L.DivIcon {
+  const m = AMENITY_META[kind];
+  return L.divIcon({
+    className: "",
+    html: `<div title="${m.label}" style="width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:13px;background:${m.bg};border:1.5px solid #fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.35)">${m.emoji}</div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  });
+}
+
+/** Comfort value (0-1) -> color for the route segment. */
+function comfortColor(v: number): string {
+  if (v >= 0.75) return "#16a34a"; // shaded / cool
+  if (v >= 0.55) return "#84cc16";
+  if (v >= 0.4) return "#eab308";
+  if (v >= 0.25) return "#f97316";
+  return "#dc2626"; // exposed / hot
+}
+
 /**
  * Leaflet map. Click once to set start, again to set destination.
  * Draws the comfort route as an SVG polyline (renders reliably — this replaced
@@ -42,7 +72,8 @@ export default function MapView({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const routeLineRef = useRef<L.Polyline | null>(null);
+  const routeLayerRef = useRef<L.LayerGroup | null>(null);
+  const amenityLayerRef = useRef<L.LayerGroup | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
   const userPickedCityRef = useRef(false);
   const firstCityRender = useRef(true);
@@ -113,29 +144,72 @@ export default function MapView({
     mapRef.current?.flyTo([lat, lng], city.zoom);
   }, [city]);
 
-  // draw the route polyline
+  // draw the route as comfort-colored segments
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    if (routeLineRef.current) {
-      routeLineRef.current.remove();
-      routeLineRef.current = null;
+    if (routeLayerRef.current) {
+      routeLayerRef.current.remove();
+      routeLayerRef.current = null;
     }
 
     if (route && route.coordinates.length > 1) {
-      // Leaflet uses [lat, lng]; our coords are [lng, lat].
-      const latlngs = route.coordinates.map(
-        ([lng, lat]) => [lat, lng] as [number, number],
+      const group = L.layerGroup().addTo(map);
+      const coords = route.coordinates;
+      const comfort = route.segmentComfort;
+
+      for (let i = 1; i < coords.length; i++) {
+        const a = coords[i - 1];
+        const b = coords[i];
+        const v = comfort[i - 1] ?? 0.5;
+        // white casing underneath for contrast, then the colored segment
+        L.polyline(
+          [
+            [a[1], a[0]],
+            [b[1], b[0]],
+          ],
+          { color: "#ffffff", weight: 10, opacity: 0.9 },
+        ).addTo(group);
+        L.polyline(
+          [
+            [a[1], a[0]],
+            [b[1], b[0]],
+          ],
+          { color: comfortColor(v), weight: 6, opacity: 0.95 },
+        ).addTo(group);
+      }
+
+      routeLayerRef.current = group;
+
+      const bounds = L.latLngBounds(
+        coords.map(([lng, lat]) => [lat, lng] as [number, number]),
       );
-      const line = L.polyline(latlngs, {
-        color: "#2563eb",
-        weight: 7,
-        opacity: 0.9,
-      }).addTo(map);
-      routeLineRef.current = line;
-      map.fitBounds(line.getBounds(), { padding: [60, 60], maxZoom: 16 });
+      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 });
     }
+  }, [route]);
+
+  // amenity pins along the route (benches, water, toilets, steps)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (amenityLayerRef.current) {
+      amenityLayerRef.current.remove();
+      amenityLayerRef.current = null;
+    }
+
+    const pts = route?.amenityPoints ?? [];
+    if (pts.length === 0) return;
+
+    const group = L.layerGroup().addTo(map);
+    pts.forEach((p) => {
+      const [lng, lat] = p.lngLat;
+      L.marker([lat, lng], { icon: amenityIcon(p.kind as AmenityKind) }).addTo(
+        group,
+      );
+    });
+    amenityLayerRef.current = group;
   }, [route]);
 
   // markers for start / end / venues
@@ -159,10 +233,25 @@ export default function MapView({
   }, [start, end, venues]);
 
   return (
-    <div
-      ref={containerRef}
-      style={{ position: "absolute", inset: 0 }}
-      aria-label="Map"
-    />
+    <>
+      <div
+        ref={containerRef}
+        style={{ position: "absolute", inset: 0 }}
+        aria-label="Map"
+      />
+      {route && (
+        <div className="map-legend">
+          <div className="map-legend__row">
+            <strong>Route comfort</strong>
+            <span className="swatch" style={{ background: "#16a34a" }} /> cool/shaded
+            <span className="swatch" style={{ background: "#eab308" }} /> warm
+            <span className="swatch" style={{ background: "#dc2626" }} /> hot/exposed
+          </div>
+          <div className="map-legend__row">
+            🪑 bench · 🚰 water · 🚻 toilet · ⚠️ steps
+          </div>
+        </div>
+      )}
+    </>
   );
 }
