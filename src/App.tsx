@@ -80,9 +80,13 @@ export default function App() {
       try {
         const when = new Date();
         when.setHours(selectedHour, 0, 0, 0);
+        const weatherWithTimeout = Promise.race([
+          fetchHourlyWeather(start),
+          new Promise((_, rej) => setTimeout(() => rej(new Error("wx timeout")), 6000)),
+        ]).catch(() => syntheticWeather());
         const [r, w] = await Promise.all([
           getRoute(start, end, profile, when),
-          fetchHourlyWeather(start).catch(() => syntheticWeather()),
+          weatherWithTimeout as ReturnType<typeof fetchHourlyWeather>,
         ]);
         if (cancelled) return;
         const wd = w.hours.length ? w : syntheticWeather();

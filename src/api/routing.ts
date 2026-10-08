@@ -54,9 +54,11 @@ export async function getRoute(
   }
 
   // Enrich with the data nobody else surfaces: shade + accessibility amenities.
+  // Overpass can be slow/flaky, so cap it with a timeout and fall back cleanly —
+  // the route must never hang waiting on amenities.
   let amenities;
   try {
-    amenities = await fetchAmenities(coordinates);
+    amenities = await withTimeout(fetchAmenities(coordinates), 6000);
   } catch {
     amenities = syntheticAmenities(coordinates);
   }
@@ -80,6 +82,14 @@ function interpolate(a: LngLat, b: LngLat, n: number): LngLat[] {
     ]);
   }
   return pts;
+}
+
+/** Reject a promise if it doesn't settle within `ms`. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms)),
+  ]);
 }
 
 export function haversine(a: LngLat, b: LngLat): number {
