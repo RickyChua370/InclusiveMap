@@ -1,17 +1,28 @@
 import { OPEN_METEO } from "../config";
-import type { HourWeather, LngLat } from "../types";
+import type { HourWeather, LngLat, WeatherData } from "../types";
+
+/** WMO weather codes we treat as "raining right now". */
+export function isRainingCode(code: number): boolean {
+  // 51-67 drizzle/rain, 80-82 rain showers, 95-99 thunderstorm
+  return (
+    (code >= 51 && code <= 67) ||
+    (code >= 80 && code <= 82) ||
+    (code >= 95 && code <= 99)
+  );
+}
 
 /**
- * Fetch today's hourly forecast from Open-Meteo (free, no API key).
- * Returns the 24 hours of the current local day.
+ * Fetch the hourly forecast + CURRENT conditions from Open-Meteo (free, no key).
+ * `localHour` is the location's current hour, so recommendations start from now.
  */
-export async function fetchHourlyWeather(point: LngLat): Promise<HourWeather[]> {
+export async function fetchHourlyWeather(point: LngLat): Promise<WeatherData> {
   const [lng, lat] = point;
   const params = new URLSearchParams({
     latitude: String(lat),
     longitude: String(lng),
+    current: "temperature_2m,precipitation,weather_code",
     hourly:
-      "temperature_2m,apparent_temperature,uv_index,cloud_cover,precipitation_probability",
+      "temperature_2m,apparent_temperature,uv_index,cloud_cover,precipitation_probability,precipitation,weather_code",
     timezone: "auto",
     forecast_days: "1",
   });
@@ -23,34 +34,46 @@ export async function fetchHourlyWeather(point: LngLat): Promise<HourWeather[]> 
   const h = data.hourly;
   const times: string[] = h.time;
 
-  return times.map((time, i) => {
-    const hour = new Date(time).getHours();
-    return {
-      time,
-      hour,
-      temp: h.temperature_2m[i],
-      apparentTemp: h.apparent_temperature[i],
-      uv: h.uv_index[i],
-      cloud: h.cloud_cover[i],
-      rainProb: h.precipitation_probability?.[i] ?? 0,
-    } satisfies HourWeather;
-  });
+  const hours: HourWeather[] = times.map((time, i) => ({
+    time,
+    hour: new Date(time).getHours(),
+    temp: h.temperature_2m[i],
+    apparentTemp: h.apparent_temperature[i],
+    uv: h.uv_index[i],
+    cloud: h.cloud_cover[i],
+    rainProb: h.precipitation_probability?.[i] ?? 0,
+    precip: h.precipitation?.[i] ?? 0,
+    code: h.weather_code?.[i] ?? 0,
+  }));
+
+  // The location's current local hour, parsed from the "current.time" string
+  // (already in local time thanks to timezone=auto).
+  const localHour = new Date(data.current.time).getHours();
+
+  return {
+    hours,
+    localHour,
+    nowPrecip: data.current.precipitation ?? 0,
+    nowCode: data.current.weather_code ?? 0,
+    nowRaining: isRainingCode(data.current.weather_code ?? 0),
+  };
 }
 
 /**
  * Offline fallback forecast so the demo never breaks if the network is down.
- * Produces a believable hot-afternoon / cloudy-later curve.
+ * Produces a believable hot-afternoon / rainy-later curve.
  */
-export function syntheticWeather(): HourWeather[] {
-  return Array.from({ length: 24 }, (_, hour) => {
-    const peak = 13; // hottest around 1pm
+export function syntheticWeather(): WeatherData {
+  const hours: HourWeather[] = Array.from({ length: 24 }, (_, hour) => {
+    const peak = 13;
     const temp = 24 + 10 * Math.exp(-((hour - peak) ** 2) / 18);
     const uv =
       hour < 7 || hour > 19
         ? 0
         : Math.max(0, 9 * Math.exp(-((hour - 12) ** 2) / 10));
-    const cloud = hour >= 14 ? 70 : 20; // clouds roll in during the afternoon
-    const rainProb = hour >= 16 && hour <= 18 ? 40 : 10;
+    const cloud = hour >= 14 ? 70 : 20;
+    const rainProb = hour >= 16 && hour <= 18 ? 60 : 10;
+    const precip = hour >= 16 && hour <= 18 ? 0.5 : 0;
     return {
       time: `2026-01-01T${String(hour).padStart(2, "0")}:00`,
       hour,
@@ -59,6 +82,17 @@ export function syntheticWeather(): HourWeather[] {
       uv: Math.round(uv * 10) / 10,
       cloud,
       rainProb,
+      precip,
+      code: precip > 0 ? 61 : cloud > 50 ? 3 : 1,
     };
   });
+  const localHour = new Date().getHours();
+  const now = hours[localHour];
+  return {
+    hours,
+    localHour,
+    nowPrecip: now.precip,
+    nowCode: now.code,
+    nowRaining: now.precip > 0,
+  };
 }

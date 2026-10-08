@@ -95,11 +95,22 @@ export function dailyComfort(
   );
 }
 
-/** Pick the best hour within a sensible waking window (6:00-21:00). */
-export function bestWindow(hours: HourlyComfort[]): HourlyComfort | null {
-  const waking = hours.filter((h) => h.hour >= 6 && h.hour <= 21);
-  if (waking.length === 0) return null;
-  return waking.reduce((best, h) => (h.score > best.score ? h : best));
+/**
+ * Pick the best hour from NOW onward, within a sensible waking window.
+ * `fromHour` is the location's current local hour, so we never recommend a
+ * time that has already passed. If it's already late, we still return the best
+ * remaining hour today (and the UI notes it's late).
+ */
+export function bestWindow(
+  hours: HourlyComfort[],
+  fromHour: number,
+): HourlyComfort | null {
+  const upcoming = hours.filter(
+    (h) => h.hour >= fromHour && h.hour <= 21,
+  );
+  const pool = upcoming.length > 0 ? upcoming : hours.filter((h) => h.hour >= fromHour);
+  if (pool.length === 0) return null;
+  return pool.reduce((best, h) => (h.score > best.score ? h : best));
 }
 
 // --- labels ------------------------------------------------------------------
@@ -135,7 +146,9 @@ function reason(w: HourWeather, shade: number): string {
   else bits.push(`${Math.round(w.apparentTemp)}°C`);
   if (w.uv >= 6) bits.push(`high UV ${Math.round(w.uv)}`);
   if (w.cloud >= 60) bits.push("cloudy");
-  if (w.rainProb >= 40) bits.push(`${w.rainProb}% rain`);
+  // Prefer actual precipitation over probability when rain is expected.
+  if (w.precip > 0) bits.push(`rain ${w.precip.toFixed(1)}mm`);
+  else if (w.rainProb >= 40) bits.push(`${w.rainProb}% rain chance`);
   if (shade >= 0.6) bits.push("mostly shaded");
   return bits.join(" · ");
 }

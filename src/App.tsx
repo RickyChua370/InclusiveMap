@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CITIES, PROFILES, type ProfileId } from "./config";
-import type { HourWeather, LngLat, RouteResult, Venue } from "./types";
+import type { LngLat, RouteResult, Venue, WeatherData } from "./types";
 import { getRoute } from "./api/routing";
 import { fetchHourlyWeather, syntheticWeather } from "./api/weather";
 import { dailyComfort } from "./engine/comfort";
@@ -22,7 +22,7 @@ export default function App() {
   const [start, setStart] = useState<LngLat | null>(null);
   const [end, setEnd] = useState<LngLat | null>(null);
   const [route, setRoute] = useState<RouteResult | null>(null);
-  const [weather, setWeather] = useState<HourWeather[]>([]);
+  const [weather, setWeather] = useState<WeatherData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,8 +71,11 @@ export default function App() {
           fetchHourlyWeather(start).catch(() => syntheticWeather()),
         ]);
         if (cancelled) return;
+        const wd = w.hours.length ? w : syntheticWeather();
         setRoute(r);
-        setWeather(w.length ? w : syntheticWeather());
+        setWeather(wd);
+        // Default the "planning for" hour to the destination's real local time.
+        setSelectedHour(wd.localHour);
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
       } finally {
@@ -86,8 +89,8 @@ export default function App() {
 
   // Comfort for every hour (recomputes locally when inputs change — no API call).
   const comfortHours = useMemo(() => {
-    if (!route || weather.length === 0) return [];
-    return dailyComfort(route, weather, new Date());
+    if (!route || !weather) return [];
+    return dailyComfort(route, weather.hours, new Date());
   }, [route, weather]);
 
   const nowComfort = useMemo(
@@ -152,9 +155,12 @@ export default function App() {
 
             <label className="field">
               Planning for hour: {hourLabel(selectedHour)}
+              {weather && selectedHour === weather.localHour && (
+                <span className="now-tag"> (now)</span>
+              )}
               <input
                 type="range"
-                min={6}
+                min={weather ? Math.min(weather.localHour, 21) : 6}
                 max={21}
                 value={selectedHour}
                 onChange={(e) => setSelectedHour(Number(e.target.value))}
@@ -185,10 +191,16 @@ export default function App() {
             {loading && <p className="muted">Planning your comfort route…</p>}
             {error && <p className="error">Error: {error}</p>}
 
-            {route && (
+            {route && weather && (
               <>
+                {weather.nowRaining && (
+                  <p className="rain-now">
+                    🌧 It's raining now ({weather.nowPrecip.toFixed(1)} mm) —
+                    consider waiting for the suggested window below.
+                  </p>
+                )}
                 <RoutePanel route={route} now={nowComfort} />
-                <WhenToGo hours={comfortHours} />
+                <WhenToGo hours={comfortHours} nowHour={weather.localHour} />
               </>
             )}
           </>

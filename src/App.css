@@ -216,18 +216,26 @@ body,
   display: flex;
   align-items: flex-end;
   gap: 3px;
-  height: 100px;
+  height: 120px;
+  padding-top: 4px;
 }
 .strip__col {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
   justify-content: flex-end;
+  height: 100%;
+}
+.strip__score {
+  font-size: 9px;
+  color: var(--muted);
+  line-height: 1;
+  margin-bottom: 2px;
 }
 .strip__bar {
-  width: 100%;
+  width: 70%;
   border-radius: 3px 3px 0 0;
   transition: height 0.2s;
 }
@@ -235,11 +243,29 @@ body,
   outline: 2px solid #0f172a;
   outline-offset: 1px;
 }
+.strip__col--now .strip__hour {
+  color: var(--brand);
+  font-weight: 700;
+}
 .strip__hour {
   font-size: 9px;
   color: var(--muted);
-  transform: rotate(-45deg);
+  margin-top: 4px;
   white-space: nowrap;
+  line-height: 1;
+}
+.now-tag {
+  color: var(--brand);
+  font-weight: 700;
+  font-size: 11px;
+}
+.rain-now {
+  font-size: 13px;
+  background: #e0f2fe;
+  color: #075985;
+  padding: 10px;
+  border-radius: 8px;
+  margin: 0;
 }
 .legend {
   display: flex;

@@ -11,6 +11,17 @@ export interface HourWeather {
   uv: number; // UV index
   cloud: number; // cloud cover %
   rainProb: number; // precipitation probability %
+  precip: number; // actual precipitation mm
+  code: number; // WMO weather code
+}
+
+/** Forecast bundle: hourly series + live "now" conditions + local clock. */
+export interface WeatherData {
+  hours: HourWeather[];
+  localHour: number; // the location's current hour (0-23)
+  nowPrecip: number; // current precipitation mm
+  nowCode: number; // current WMO weather code
+  nowRaining: boolean; // is it raining right now?
 }
 
 /** A routed path returned by the routing engine. */
