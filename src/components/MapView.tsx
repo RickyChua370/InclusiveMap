@@ -15,6 +15,29 @@ interface Props {
   onLocate?: (lngLat: LngLat) => void;
 }
 
+/** Idempotently (re)create the route source + line layer on a map. */
+function ensureRouteLayer(map: maplibregl.Map) {
+  if (!map.getSource("route")) {
+    map.addSource("route", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+  if (!map.getLayer("route-line")) {
+    map.addLayer({
+      id: "route-line",
+      type: "line",
+      source: "route",
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: {
+        "line-color": "#2563eb",
+        "line-width": 7,
+        "line-opacity": 0.9,
+      },
+    });
+  }
+}
+
 /**
  * MapLibre map. Click once to set start, twice to set destination.
  * Draws the comfort route and any registered inclusive venues.
@@ -52,10 +75,12 @@ export default function MapView({
     });
     map.addControl(new maplibregl.NavigationControl(), "top-right");
 
-    // Geolocation: a "locate me" control that also auto-centres on load.
+    // Geolocation: a "locate me" control that centres on load. We do NOT
+    // track continuously (that re-centres the map and interferes with the
+    // click-to-set-destination flow) — one fix is enough.
     const geolocate = new maplibregl.GeolocateControl({
       positionOptions: { enableHighAccuracy: true },
-      trackUserLocation: true,
+      trackUserLocation: false,
       showUserLocation: true,
     });
     map.addControl(geolocate, "top-right");
@@ -69,28 +94,9 @@ export default function MapView({
       clickRef.current([e.lngLat.lng, e.lngLat.lat]),
     );
 
-    // Add the route source + layer ONCE, as soon as the style loads. After
-    // this, drawing a route is just a data update — no timing races.
-    map.on("load", () => {
-      if (!map.getSource("route")) {
-        map.addSource("route", {
-          type: "geojson",
-          data: { type: "FeatureCollection", features: [] },
-        });
-        map.addLayer({
-          id: "route-line",
-          type: "line",
-          source: "route",
-          layout: { "line-join": "round", "line-cap": "round" },
-          paint: {
-            "line-color": "#2563eb",
-            "line-width": 7,
-            "line-opacity": 0.9,
-          },
-        });
-      }
+    const onReady = () => {
+      ensureRouteLayer(map);
       setStyleReady(true);
-
       // Try to centre on the user automatically (unless they picked a city).
       if (!userPickedCityRef.current) {
         try {
@@ -99,7 +105,13 @@ export default function MapView({
           /* geolocation unavailable — keep the city default */
         }
       }
-    });
+    };
+
+    // Cover every case: style may already be loaded, or load later.
+    if (map.isStyleLoaded()) onReady();
+    else map.on("load", onReady);
+    // Re-assert the layer if the style ever reloads (keeps it from vanishing).
+    map.on("styledata", () => ensureRouteLayer(map));
 
     mapRef.current = map;
     return () => {
@@ -119,10 +131,12 @@ export default function MapView({
     mapRef.current?.flyTo({ center: city.center, zoom: city.zoom });
   }, [city]);
 
-  // draw route — source/layer already exist, so this is just a data update.
+  // draw route — self-healing: ensure the layer exists, then set data.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !styleReady) return;
+    if (!map) return;
+    if (!map.isStyleLoaded()) return; // styledata/load will re-run via styleReady
+    ensureRouteLayer(map);
     const src = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
     if (!src) return;
 
