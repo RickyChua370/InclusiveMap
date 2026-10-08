@@ -11,6 +11,8 @@ interface Props {
   end: LngLat | null;
   venues: Venue[];
   onMapClick: (lngLat: LngLat) => void;
+  /** Called when the browser geolocates the user. */
+  onLocate?: (lngLat: LngLat) => void;
 }
 
 /**
@@ -24,12 +26,19 @@ export default function MapView({
   end,
   venues,
   onMapClick,
+  onLocate,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<maplibregl.Marker[]>([]);
   const clickRef = useRef(onMapClick);
   clickRef.current = onMapClick;
+  const locateRef = useRef(onLocate);
+  locateRef.current = onLocate;
+  // Tracks whether the user has manually chosen a city, so a late-arriving
+  // geolocation fix doesn't yank the map away from their choice.
+  const userPickedCityRef = useRef(false);
+  const firstCityRender = useRef(true);
 
   // init
   useEffect(() => {
@@ -41,9 +50,36 @@ export default function MapView({
       zoom: city.zoom,
     });
     map.addControl(new maplibregl.NavigationControl(), "top-right");
+
+    // Geolocation: a "locate me" control that also auto-centres on load.
+    const geolocate = new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: true,
+      showUserLocation: true,
+    });
+    map.addControl(geolocate, "top-right");
+
+    geolocate.on("geolocate", (e) => {
+      const coords = (e as { coords: GeolocationCoordinates }).coords;
+      locateRef.current?.([coords.longitude, coords.latitude]);
+    });
+
     map.on("click", (e: maplibregl.MapMouseEvent) =>
       clickRef.current([e.lngLat.lng, e.lngLat.lat]),
     );
+
+    // Once the map is ready, try to centre on the user automatically.
+    // If they deny permission (or it fails) we silently stay on the city.
+    map.on("load", () => {
+      if (!userPickedCityRef.current) {
+        try {
+          geolocate.trigger();
+        } catch {
+          /* geolocation unavailable — keep the city default */
+        }
+      }
+    });
+
     mapRef.current = map;
     return () => {
       map.remove();
@@ -51,8 +87,14 @@ export default function MapView({
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // fly to selected city
+  // fly to selected city — but ignore the very first render so we don't
+  // override the auto-geolocation attempt on load.
   useEffect(() => {
+    if (firstCityRender.current) {
+      firstCityRender.current = false;
+      return;
+    }
+    userPickedCityRef.current = true;
     mapRef.current?.flyTo({ center: city.center, zoom: city.zoom });
   }, [city]);
 

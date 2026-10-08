@@ -110,6 +110,19 @@ body,
   border-radius: 8px;
   margin: 0;
 }
+.locate-btn {
+  background: #fff;
+  border: 1px solid var(--brand);
+  color: var(--brand);
+  padding: 9px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+}
+.locate-btn:hover {
+  background: #eff6ff;
+}
 .error {
   color: #dc2626;
   font-size: 13px;

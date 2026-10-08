@@ -28,6 +28,7 @@ export default function App() {
 
   const [venues, setVenues] = useState<Venue[]>([]);
   const [pendingPoint, setPendingPoint] = useState<LngLat | null>(null);
+  const [userLocation, setUserLocation] = useState<LngLat | null>(null);
 
   const [selectedHour, setSelectedHour] = useState<number>(
     new Date().getHours(),
@@ -168,6 +169,19 @@ export default function App() {
                   : "Drag endpoints by clicking elsewhere to re-plan."}
             </p>
 
+            {userLocation && (
+              <button
+                className="locate-btn"
+                onClick={() => {
+                  setStart(userLocation);
+                  setEnd(null);
+                  setRoute(null);
+                }}
+              >
+                📍 Use my location as start
+              </button>
+            )}
+
             {loading && <p className="muted">Planning your comfort route…</p>}
             {error && <p className="error">Error: {error}</p>}
 
@@ -208,6 +222,7 @@ export default function App() {
           end={end}
           venues={venues}
           onMapClick={handleMapClick}
+          onLocate={(p) => setUserLocation(p)}
         />
       </main>
     </div>
