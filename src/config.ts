@@ -47,9 +47,37 @@ export const OPEN_METEO = "https://api.open-meteo.com/v1/forecast";
 /** Overpass API — free, no key. Pulls accessibility amenities from OpenStreetMap. */
 export const OVERPASS = "https://overpass-api.de/api/interpreter";
 
-/** Free raster basemap style (OSM tiles via a demo style — no key needed). */
-export const MAP_STYLE =
-  "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+/**
+ * Free raster basemap, defined INLINE so we don't depend on any hosted vector
+ * style (CARTO's public vector tiles now 404 without a token). These raster
+ * tiles need no key and no registration. CARTO "light_all" gives a clean,
+ * low-ink look that keeps the route and markers readable.
+ */
+export const MAP_STYLE: import("maplibre-gl").StyleSpecification = {
+  version: 8,
+  sources: {
+    basemap: {
+      type: "raster",
+      tiles: [
+        "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+        "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+        "https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+      ],
+      tileSize: 256,
+      attribution:
+        '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
+    },
+  },
+  layers: [
+    {
+      id: "basemap",
+      type: "raster",
+      source: "basemap",
+      minzoom: 0,
+      maxzoom: 20,
+    },
+  ],
+};
 
 // --- Comfort scoring weights -------------------------------------------------
 // The comfort score (0-100, higher = more comfortable/safe) blends five factors.
