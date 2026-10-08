@@ -132,6 +132,12 @@ export default function MapView({
   // draw route — self-healing: ensure the layer exists, then set data.
   useEffect(() => {
     const map = mapRef.current;
+    (window as unknown as { __dbg?: unknown }).__dbg = {
+      ranAt: Date.now(),
+      hasMap: !!map,
+      routeNull: route == null,
+      coordLen: route?.coordinates?.length ?? -1,
+    };
     if (!map) return;
     const geojson = {
       type: "FeatureCollection" as const,
