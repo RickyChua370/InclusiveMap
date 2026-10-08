@@ -133,31 +133,42 @@ export default function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (!map.isStyleLoaded()) return; // styledata/load will re-run via styleReady
-    ensureRouteLayer(map);
-    const src = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
-    if (!src) return;
-
-    src.setData({
-      type: "FeatureCollection",
+    const geojson = {
+      type: "FeatureCollection" as const,
       features: route
         ? [
             {
-              type: "Feature",
+              type: "Feature" as const,
               geometry: {
-                type: "LineString",
+                type: "LineString" as const,
                 coordinates: route.coordinates,
               },
               properties: {},
             },
           ]
         : [],
-    });
+    };
 
-    if (route && route.coordinates.length > 1) {
-      const b = new maplibregl.LngLatBounds();
-      route.coordinates.forEach((c) => b.extend(c));
-      map.fitBounds(b, { padding: 70, maxZoom: 16, duration: 600 });
+    const apply = () => {
+      ensureRouteLayer(map);
+      const src = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
+      if (!src) return false;
+      src.setData(geojson);
+      if (route && route.coordinates.length > 1) {
+        const b = new maplibregl.LngLatBounds();
+        route.coordinates.forEach((c) => b.extend(c));
+        map.fitBounds(b, { padding: 70, maxZoom: 16, duration: 600 });
+      }
+      return true;
+    };
+
+    // Always apply. If the style isn't ready yet, retry once it is — never
+    // silently drop the route data (this was the bug: data never reached the map).
+    if (map.isStyleLoaded()) {
+      apply();
+    } else {
+      map.once("idle", apply);
+      map.once("load", apply);
     }
   }, [route, styleReady]);
 
