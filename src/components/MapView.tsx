@@ -97,14 +97,9 @@ export default function MapView({
     const onReady = () => {
       ensureRouteLayer(map);
       setStyleReady(true);
-      // Try to centre on the user automatically (unless they picked a city).
-      if (!userPickedCityRef.current) {
-        try {
-          geolocate.trigger();
-        } catch {
-          /* geolocation unavailable — keep the city default */
-        }
-      }
+      // NOTE: we intentionally do NOT auto-trigger geolocation here. The map
+      // stays on the selected pilot city; the user can tap the locate control
+      // or "Use my location as start" when they want their position.
     };
 
     // Cover every case: style may already be loaded, or load later.
@@ -112,6 +107,9 @@ export default function MapView({
     else map.on("load", onReady);
     // Re-assert the layer if the style ever reloads (keeps it from vanishing).
     map.on("styledata", () => ensureRouteLayer(map));
+
+    // Expose for diagnostics (harmless; helps verify the route line in-browser).
+    (window as unknown as { __map?: maplibregl.Map }).__map = map;
 
     mapRef.current = map;
     return () => {
