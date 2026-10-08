@@ -49,23 +49,20 @@ export const OVERPASS = "https://overpass-api.de/api/interpreter";
 
 /**
  * Free raster basemap, defined INLINE so we don't depend on any hosted vector
- * style (CARTO's public vector tiles now 404 without a token). These raster
- * tiles need no key and no registration. CARTO "light_all" gives a clean,
- * low-ink look that keeps the route and markers readable.
+ * style. We use OpenStreetMap's standard tiles — genuinely keyless, no
+ * registration, no referer/token enforcement (CARTO now watermarks keyless
+ * requests, so we moved off it).
  */
 export const MAP_STYLE: import("maplibre-gl").StyleSpecification = {
   version: 8,
   sources: {
     basemap: {
       type: "raster",
-      tiles: [
-        "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-        "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-        "https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-      ],
+      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
       tileSize: 256,
+      maxzoom: 19,
       attribution:
-        '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
+        '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     },
   },
   layers: [
