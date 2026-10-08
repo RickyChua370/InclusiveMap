@@ -98,31 +98,39 @@ export default function MapView({
     mapRef.current?.flyTo({ center: city.center, zoom: city.zoom });
   }, [city]);
 
-  // draw route
+  // draw route — resilient to style-load races and re-planning.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const draw = () => {
-      const src = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
-      const geojson = {
-        type: "FeatureCollection" as const,
-        features: route
-          ? [
-              {
-                type: "Feature" as const,
-                geometry: {
-                  type: "LineString" as const,
-                  coordinates: route.coordinates,
-                },
-                properties: {},
+
+    const geojson = {
+      type: "FeatureCollection" as const,
+      features: route
+        ? [
+            {
+              type: "Feature" as const,
+              geometry: {
+                type: "LineString" as const,
+                coordinates: route.coordinates,
               },
-            ]
-          : [],
-      };
-      if (src) {
-        src.setData(geojson);
-      } else {
+              properties: {},
+            },
+          ]
+        : [],
+    };
+
+    const draw = () => {
+      // (Re)create the source if the style reloaded and dropped it.
+      let src = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
+      if (!src) {
         map.addSource("route", { type: "geojson", data: geojson });
+        src = map.getSource("route") as maplibregl.GeoJSONSource;
+      } else {
+        src.setData(geojson);
+      }
+
+      // Make sure the line layer exists (it can be lost on style changes).
+      if (!map.getLayer("route-line")) {
         map.addLayer({
           id: "route-line",
           type: "line",
@@ -131,18 +139,24 @@ export default function MapView({
           paint: {
             "line-color": "#2563eb",
             "line-width": 6,
-            "line-opacity": 0.85,
+            "line-opacity": 0.9,
           },
         });
       }
+
       if (route && route.coordinates.length > 1) {
         const b = new maplibregl.LngLatBounds();
         route.coordinates.forEach((c) => b.extend(c));
         map.fitBounds(b, { padding: 70, maxZoom: 16 });
       }
     };
-    if (map.isStyleLoaded()) draw();
-    else map.once("load", draw);
+
+    if (map.isStyleLoaded()) {
+      draw();
+    } else {
+      // "load" may have already fired; "idle" always fires once ready.
+      map.once("idle", draw);
+    }
   }, [route]);
 
   // markers for start / end / venues

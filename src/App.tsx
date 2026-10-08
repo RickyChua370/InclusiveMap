@@ -8,6 +8,7 @@ import MapView from "./components/MapView";
 import RoutePanel from "./components/RoutePanel";
 import WhenToGo from "./components/WhenToGo";
 import BusinessPanel from "./components/BusinessPanel";
+import SearchBar from "./components/SearchBar";
 import "./App.css";
 
 type Mode = "traveller" | "business";
@@ -41,6 +42,13 @@ export default function App() {
     setRoute(null);
     setPendingPoint(null);
   }, [cityId]);
+
+  // Set both endpoints at once (from the search bar).
+  function routeBetween(s: LngLat, e: LngLat) {
+    setStart(s);
+    setEnd(e);
+    setRoute(null);
+  }
 
   function handleMapClick(lngLat: LngLat) {
     if (mode === "business") {
@@ -167,26 +175,11 @@ export default function App() {
               />
             </label>
 
-            <p className="howto">
-              {!start
-                ? "① Click the map to set your start."
-                : !end
-                  ? "② Click again to set your destination."
-                  : "Drag endpoints by clicking elsewhere to re-plan."}
-            </p>
-
-            {userLocation && (
-              <button
-                className="locate-btn"
-                onClick={() => {
-                  setStart(userLocation);
-                  setEnd(null);
-                  setRoute(null);
-                }}
-              >
-                📍 Use my location as start
-              </button>
-            )}
+            <SearchBar
+              city={city}
+              userLocation={userLocation}
+              onRoute={routeBetween}
+            />
 
             {loading && <p className="muted">Planning your comfort route…</p>}
             {error && <p className="error">Error: {error}</p>}
