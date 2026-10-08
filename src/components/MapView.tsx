@@ -56,6 +56,16 @@ function redrawRoute(map: maplibregl.Map, route: RouteResult | null) {
           ]
         : [],
   });
+  // Make sure the line sits on top of basemap layers and force a repaint —
+  // without this, a layer added during style load can fail to paint.
+  if (map.getLayer("route-line")) {
+    try {
+      map.moveLayer("route-line");
+    } catch {
+      /* ignore if it can't be moved */
+    }
+  }
+  map.triggerRepaint();
 }
 
 /**
