@@ -15,56 +15,43 @@ interface Props {
   onLocate?: (lngLat: LngLat) => void;
 }
 
-/** Idempotently (re)create the route source + line layer on a map. */
-function ensureRouteLayer(map: maplibregl.Map) {
-  if (!map.getSource("route")) {
-    map.addSource("route", {
-      type: "geojson",
-      data: { type: "FeatureCollection", features: [] },
-    });
-  }
-  if (!map.getLayer("route-line")) {
-    map.addLayer({
-      id: "route-line",
-      type: "line",
-      source: "route",
-      layout: { "line-join": "round", "line-cap": "round" },
-      paint: {
-        "line-color": "#2563eb",
-        "line-width": 7,
-        "line-opacity": 0.9,
-      },
-    });
-  }
-}
-
 /** Set the route line's data (or clear it) on an already-ready map. */
 function redrawRoute(map: maplibregl.Map, route: RouteResult | null) {
-  ensureRouteLayer(map);
-  const src = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
-  if (!src) return;
-  src.setData({
-    type: "FeatureCollection",
+  const data = {
+    type: "FeatureCollection" as const,
     features:
       route && route.coordinates.length > 1
         ? [
             {
-              type: "Feature",
-              geometry: { type: "LineString", coordinates: route.coordinates },
+              type: "Feature" as const,
+              geometry: {
+                type: "LineString" as const,
+                coordinates: route.coordinates,
+              },
               properties: {},
             },
           ]
         : [],
-  });
-  // Make sure the line sits on top of basemap layers and force a repaint —
-  // without this, a layer added during style load can fail to paint.
-  if (map.getLayer("route-line")) {
-    try {
-      map.moveLayer("route-line");
-    } catch {
-      /* ignore if it can't be moved */
-    }
+  };
+
+  // Create or update the source WITH the data (not empty-then-setData).
+  const existing = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
+  if (existing) {
+    existing.setData(data);
+  } else {
+    map.addSource("route", { type: "geojson", data });
   }
+
+  // Re-add the layer fresh so its render binding to the source is guaranteed.
+  // (A layer added at the style-load boundary can end up never painting.)
+  if (map.getLayer("route-line")) map.removeLayer("route-line");
+  map.addLayer({
+    id: "route-line",
+    type: "line",
+    source: "route",
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: { "line-color": "#2563eb", "line-width": 7, "line-opacity": 0.9 },
+  });
   map.triggerRepaint();
 }
 
@@ -127,7 +114,6 @@ export default function MapView({
     );
 
     const onReady = () => {
-      ensureRouteLayer(map);
       redrawRoute(map, routeRef.current); // paint any route we already have
       setStyleReady(true);
       // NOTE: we intentionally do NOT auto-trigger geolocation here. The map
