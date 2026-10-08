@@ -38,6 +38,26 @@ function ensureRouteLayer(map: maplibregl.Map) {
   }
 }
 
+/** Set the route line's data (or clear it) on an already-ready map. */
+function redrawRoute(map: maplibregl.Map, route: RouteResult | null) {
+  ensureRouteLayer(map);
+  const src = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
+  if (!src) return;
+  src.setData({
+    type: "FeatureCollection",
+    features:
+      route && route.coordinates.length > 1
+        ? [
+            {
+              type: "Feature",
+              geometry: { type: "LineString", coordinates: route.coordinates },
+              properties: {},
+            },
+          ]
+        : [],
+  });
+}
+
 /**
  * MapLibre map. Click once to set start, twice to set destination.
  * Draws the comfort route and any registered inclusive venues.
@@ -62,6 +82,8 @@ export default function MapView({
   // geolocation fix doesn't yank the map away from their choice.
   const userPickedCityRef = useRef(false);
   const firstCityRender = useRef(true);
+  const routeRef = useRef<RouteResult | null>(null);
+  routeRef.current = route;
   const [styleReady, setStyleReady] = useState(false);
 
   // init
@@ -96,17 +118,16 @@ export default function MapView({
 
     const onReady = () => {
       ensureRouteLayer(map);
+      redrawRoute(map, routeRef.current); // paint any route we already have
       setStyleReady(true);
       // NOTE: we intentionally do NOT auto-trigger geolocation here. The map
-      // stays on the selected pilot city; the user can tap the locate control
+      // stays on the selected pilot city; the user taps the locate control
       // or "Use my location as start" when they want their position.
     };
 
     // Cover every case: style may already be loaded, or load later.
     if (map.isStyleLoaded()) onReady();
     else map.on("load", onReady);
-    // Re-assert the layer if the style ever reloads (keeps it from vanishing).
-    map.on("styledata", () => ensureRouteLayer(map));
 
     // Expose for diagnostics (harmless; helps verify the route line in-browser).
     (window as unknown as { __map?: maplibregl.Map }).__map = map;
@@ -129,52 +150,15 @@ export default function MapView({
     mapRef.current?.flyTo({ center: city.center, zoom: city.zoom });
   }, [city]);
 
-  // draw route — self-healing: ensure the layer exists, then set data.
+  // draw route whenever it changes (and once the style becomes ready).
   useEffect(() => {
     const map = mapRef.current;
-    (window as unknown as { __dbg?: unknown }).__dbg = {
-      ranAt: Date.now(),
-      hasMap: !!map,
-      routeNull: route == null,
-      coordLen: route?.coordinates?.length ?? -1,
-    };
-    if (!map) return;
-    const geojson = {
-      type: "FeatureCollection" as const,
-      features: route
-        ? [
-            {
-              type: "Feature" as const,
-              geometry: {
-                type: "LineString" as const,
-                coordinates: route.coordinates,
-              },
-              properties: {},
-            },
-          ]
-        : [],
-    };
-
-    const apply = () => {
-      ensureRouteLayer(map);
-      const src = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
-      if (!src) return false;
-      src.setData(geojson);
-      if (route && route.coordinates.length > 1) {
-        const b = new maplibregl.LngLatBounds();
-        route.coordinates.forEach((c) => b.extend(c));
-        map.fitBounds(b, { padding: 70, maxZoom: 16, duration: 600 });
-      }
-      return true;
-    };
-
-    // Always apply. If the style isn't ready yet, retry once it is — never
-    // silently drop the route data (this was the bug: data never reached the map).
-    if (map.isStyleLoaded()) {
-      apply();
-    } else {
-      map.once("idle", apply);
-      map.once("load", apply);
+    if (!map || !styleReady) return;
+    redrawRoute(map, route);
+    if (route && route.coordinates.length > 1) {
+      const b = new maplibregl.LngLatBounds();
+      route.coordinates.forEach((c) => b.extend(c));
+      map.fitBounds(b, { padding: 70, maxZoom: 16, duration: 600 });
     }
   }, [route, styleReady]);
 
