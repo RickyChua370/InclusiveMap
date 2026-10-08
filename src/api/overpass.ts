@@ -74,7 +74,7 @@ export async function fetchAmenities(route: LngLat[]): Promise<AmenitiesResult> 
 
   const counts: AmenityCounts = { benches: 0, water: 0, toilets: 0, steps: 0 };
   const points: AmenityPoint[] = [];
-  const NEAR_M = 60; // only keep amenities within 60 m of the path
+  const NEAR_M = 90; // keep amenities within ~90 m of the path (OSM coverage varies)
 
   for (const el of data.elements ?? []) {
     const t = el.tags ?? {};
@@ -101,16 +101,31 @@ export async function fetchAmenities(route: LngLat[]): Promise<AmenitiesResult> 
   return { counts, points };
 }
 
-/** Offline fallback amenity estimate (counts only, no map pins). */
+/**
+ * Offline/estimate fallback used when Overpass is unavailable. Produces counts
+ * AND a few points spaced along the route so the map stays visually consistent
+ * (pins + numbers agree) even when live OSM data can't be fetched.
+ */
 export function syntheticAmenities(route: LngLat[]): AmenitiesResult {
   const km = route.length / 50;
-  return {
-    counts: {
-      benches: Math.round(2 + km * 3),
-      water: Math.round(km * 1.5),
-      toilets: Math.max(1, Math.round(km)),
-      steps: Math.round(km),
-    },
-    points: [],
+  const counts: AmenityCounts = {
+    benches: Math.round(2 + km * 3),
+    water: Math.max(1, Math.round(km * 1.5)),
+    toilets: Math.max(1, Math.round(km)),
+    steps: Math.round(km),
   };
+
+  const points: AmenityPoint[] = [];
+  if (route.length > 3) {
+    const place = (kind: AmenityPoint["kind"], frac: number) => {
+      const idx = Math.max(1, Math.min(route.length - 2, Math.floor(route.length * frac)));
+      points.push({ kind, lngLat: route[idx] });
+    };
+    place("bench", 0.25);
+    place("water", 0.5);
+    place("toilets", 0.7);
+    place("bench", 0.8);
+  }
+
+  return { counts, points };
 }
