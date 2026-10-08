@@ -1,0 +1,7 @@
+/* Global reset lives here; component styles are in App.css */
+:root {
+  color-scheme: light;
+}
+body {
+  margin: 0;
+}
