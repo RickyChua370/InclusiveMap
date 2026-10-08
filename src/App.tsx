@@ -66,6 +66,12 @@ export default function App() {
 
   // Compute route + weather whenever we have both endpoints.
   useEffect(() => {
+    (window as unknown as { __fetchDbg?: unknown }).__fetchDbg = {
+      mode,
+      hasStart: !!start,
+      hasEnd: !!end,
+      t: Date.now(),
+    };
     if (mode !== "traveller" || !start || !end) return;
     let cancelled = false;
     (async () => {
@@ -85,6 +91,7 @@ export default function App() {
         // Default the "planning for" hour to the destination's real local time.
         setSelectedHour(wd.localHour);
       } catch (e) {
+        (window as unknown as { __fetchErr?: string }).__fetchErr = String(e);
         if (!cancelled) setError((e as Error).message);
       } finally {
         if (!cancelled) setLoading(false);
